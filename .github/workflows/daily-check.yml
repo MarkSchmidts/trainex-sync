@@ -9,13 +9,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write    # needed to commit updated data files
-  issues: write      # needed to create/comment on the tracking issue
+  contents: write
+  issues: write
 
 jobs:
   check:
     name: Check TraiNex Schedule
-    runs-on: ubuntu-latest
+    # ── Runner options ──────────────────────────────────────────────────────
+    # Option A (recommended): self-hosted runner on your Mac/PC/VPS.
+    #   → Bypasses Cloudflare's datacenter IP block.
+    #   → See README for setup instructions.
+    #
+    # Option B: GitHub-hosted runner.
+    #   → May fail with 403 if Cloudflare blocks the IP.
+    #   → Uncomment the line below and comment out 'self-hosted' to try it.
+    # ────────────────────────────────────────────────────────────────────────
+    runs-on: self-hosted
+    # runs-on: ubuntu-latest   # ← uncomment to use GitHub-hosted runner
 
     steps:
       - name: Checkout repository
@@ -41,7 +51,6 @@ jobs:
           TRAINEX_PASS:        ${{ secrets.TRAINEX_PASS }}
           GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY:   ${{ github.repository }}
-          # Optional SMTP email (leave empty to use GitHub Issues only)
           SMTP_HOST:           ${{ secrets.SMTP_HOST }}
           SMTP_PORT:           ${{ secrets.SMTP_PORT }}
           SMTP_USER:           ${{ secrets.SMTP_USER }}
@@ -54,7 +63,6 @@ jobs:
           git config user.name  "trainex-sync[bot]"
           git config user.email "trainex-sync[bot]@users.noreply.github.com"
           git add data/
-          # Only commit if there are actual changes
           if git diff --staged --quiet; then
             echo "No data changes to commit."
           else

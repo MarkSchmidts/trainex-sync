@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS launchctl plist — runs the TraiNex check daily at 06:05.
+  Works even after sleep (macOS will wake the job when due).
+
+  SETUP:
+    1. Edit the paths below to match your system (replace /Users/yourname/...)
+    2. cp scripts/com.trainex-sync.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.trainex-sync.plist
+    4. Verify: launchctl list | grep trainex
+
+  LOGS: /tmp/trainex-sync-stdout.log and stderr.log
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.trainex-sync</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/yourname/trainex-sync/scripts/local-cron.sh</string>
+  </array>
+
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>5</integer>
+  </dict>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/yourname/trainex-sync</string>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/trainex-sync-stdout.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/tmp/trainex-sync-stderr.log</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+  </dict>
+</dict>
+</plist>
