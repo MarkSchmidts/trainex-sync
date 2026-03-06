@@ -1,0 +1,41 @@
+services:
+
+  # ── Dashboard ──────────────────────────────────────────────────────────────
+  dashboard:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      TRAINEX_USER: "${TRAINEX_USER}"
+      TRAINEX_PASS: "${TRAINEX_PASS}"
+      GITHUB_REPOSITORY: "MarkSchmidts/trainex-sync"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      NOTIFY_EMAIL: "${NOTIFY_EMAIL:-mark.schmidts@student.medicalschool-hamburg.de}"
+    volumes:
+      - ./data:/app/data          # persist schedule data
+      - ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.ssh:/root/.ssh:ro      # for git push via SSH
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/state"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── Daily check (runs check.js at 06:00 and exits) ────────────────────────
+  checker:
+    build: .
+    restart: unless-stopped
+    environment:
+      TRAINEX_USER: "${TRAINEX_USER}"
+      TRAINEX_PASS: "${TRAINEX_PASS}"
+      GITHUB_REPOSITORY: "MarkSchmidts/trainex-sync"
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+      NOTIFY_EMAIL: "${NOTIFY_EMAIL:-mark.schmidts@student.medicalschool-hamburg.de}"
+      CRON_SCHEDULE: "0 6 * * *"
+    volumes:
+      - ./data:/app/data
+      - ~/.gitconfig:/root/.gitconfig:ro
+      - ~/.ssh:/root/.ssh:ro
+    command: node src/daemon.js    # cron daemon — see src/daemon.js
