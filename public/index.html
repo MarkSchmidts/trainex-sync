@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MSH Stundenplan Sync</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3349;
+      --accent: #4f8ef7;
+      --accent-dim: #2d4f8a;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #e2e8f0;
+      --text-dim: #6b7280;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 14px; line-height: 1.6; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .logo { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .logo span { color: var(--text-dim); font-weight: 400; font-size: 13px; margin-left: 8px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #3d7ae8; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+    .stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
+    .stat-value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    .stat-green { color: var(--green); }
+    .stat-red   { color: var(--red); }
+    .stat-yellow{ color: var(--yellow); }
+    .stat-blue  { color: var(--accent); }
+
+    .tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 20px;
+    }
+    .tab {
+      padding: 10px 18px;
+      cursor: pointer;
+      color: var(--text-dim);
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      font-size: 13px;
+      font-weight: 500;
+      user-select: none;
+    }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Changes panel */
+    .change-section { margin-bottom: 24px; }
+    .change-section-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .badge {
+      background: var(--surface2);
+      border-radius: 20px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-green  { background: rgba(34,197,94,0.15); color: var(--green); }
+    .badge-red    { background: rgba(239,68,68,0.15); color: var(--red); }
+    .badge-yellow { background: rgba(245,158,11,0.15); color: var(--yellow); }
+
+    .event-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 8px;
+      border-left: 3px solid transparent;
+    }
+    .event-card.added   { border-left-color: var(--green); }
+    .event-card.removed { border-left-color: var(--red); }
+    .event-card.modified{ border-left-color: var(--yellow); }
+
+    .event-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+    .event-meta  { display: flex; flex-wrap: wrap; gap: 12px; color: var(--text-dim); font-size: 12px; }
+    .event-meta span { display: flex; align-items: center; gap: 4px; }
+
+    .diff-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .diff-old { background: rgba(239,68,68,0.1); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+    .diff-new { background: rgba(34,197,94,0.1); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+    .diff-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.7; margin-bottom: 2px; }
+
+    /* Schedule panel */
+    .schedule-filter {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    .search-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 12px;
+      color: var(--text);
+      font-size: 13px;
+      flex: 1;
+      min-width: 200px;
+    }
+    .search-input:focus { outline: none; border-color: var(--accent); }
+
+    .week-group { margin-bottom: 20px; }
+    .week-header {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sched-event {
+      display: grid;
+      grid-template-columns: 100px 1fr auto;
+      gap: 12px;
+      align-items: start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin-bottom: 6px;
+    }
+    .sched-time { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+    .sched-title { font-weight: 500; font-size: 13px; }
+    .sched-room { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+    .sched-module { font-size: 11px; background: var(--surface2); border-radius: 4px; padding: 2px 6px; color: var(--accent); white-space: nowrap; }
+
+    /* History panel */
+    .history-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 8px;
+    }
+    .history-date { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+    .history-stats { display: flex; gap: 12px; }
+    .history-stat { font-size: 12px; display: flex; align-items: center; gap: 4px; }
+
+    /* Status bar */
+    .status-bar {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      gap: 20px;
+      font-size: 12px;
+      color: var(--text-dim);
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+    }
+    .status-bar span { display: flex; align-items: center; gap: 4px; }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot-green  { background: var(--green); }
+    .dot-yellow { background: var(--yellow); }
+    .dot-red    { background: var(--red); }
+
+    .loading { text-align: center; padding: 40px; color: var(--text-dim); }
+    .empty    { text-align: center; padding: 40px; color: var(--text-dim); font-size: 13px; }
+
+    .toast {
+      position: fixed;
+      top: 72px;
+      right: 20px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      z-index: 200;
+      max-width: 320px;
+      display: none;
+    }
+    .toast.show { display: block; animation: slideIn 0.2s ease; }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+    #spinner { animation: spin 1s linear infinite; display: none; }
+    #spinner.show { display: inline-block; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    .no-changes {
+      text-align: center;
+      padding: 60px 20px;
+    }
+    .no-changes .icon { font-size: 48px; margin-bottom: 12px; }
+    .no-changes .title { font-size: 18px; font-weight: 600; margin-bottom: 8px; color: var(--green); }
+    .no-changes .subtitle { color: var(--text-dim); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <span class="logo">🎓 MSH Stundenplan Sync</span>
+    <span class="logo"><span>Automatische Änderungserkennung für TraiNex</span></span>
+  </div>
+  <div class="header-actions">
+    <a href="/api/download" class="btn btn-secondary" download="msh-stundenplan.ics">
+      ⬇ iCal herunterladen
+    </a>
+    <button class="btn btn-primary" onclick="runCheck()" id="checkBtn">
+      <span id="spinner">↻</span>
+      ↺ Jetzt prüfen
+    </button>
+  </div>
+</header>
+
+<div class="container" style="padding-bottom: 60px;">
+
+  <!-- Stats grid -->
+  <div class="stats-grid" id="statsGrid">
+    <div class="stat-card">
+      <div class="stat-label">Letzte Prüfung</div>
+      <div class="stat-value stat-blue" id="statLastCheck">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Neue Termine</div>
+      <div class="stat-value stat-green" id="statAdded">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Entfallen</div>
+      <div class="stat-value stat-red" id="statRemoved">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Geändert</div>
+      <div class="stat-value stat-yellow" id="statModified">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Termine gesamt</div>
+      <div class="stat-value stat-blue" id="statTotal">—</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('changes')">Änderungen</div>
+    <div class="tab" onclick="switchTab('schedule')">Stundenplan</div>
+    <div class="tab" onclick="switchTab('history')">Verlauf</div>
+  </div>
+
+  <!-- Changes tab -->
+  <div class="tab-panel active" id="tab-changes">
+    <div id="changesContent"><div class="loading">Lade...</div></div>
+  </div>
+
+  <!-- Schedule tab -->
+  <div class="tab-panel" id="tab-schedule">
+    <div class="schedule-filter">
+      <input type="text" class="search-input" id="schedSearch" placeholder="🔍 Suchen (Kurs, Raum, Dozent)..." oninput="renderSchedule()">
+      <button class="btn btn-secondary" onclick="filterWeek('all')">Alle</button>
+      <button class="btn btn-secondary" onclick="filterWeek('future')">Zukünftig</button>
+    </div>
+    <div id="scheduleContent"><div class="loading">Lade...</div></div>
+  </div>
+
+  <!-- History tab -->
+  <div class="tab-panel" id="tab-history">
+    <div id="historyContent"><div class="loading">Lade...</div></div>
+  </div>
+
+</div>
+
+<div class="status-bar">
+  <span><span class="dot dot-green" id="statusDot"></span> <span id="statusText">Verbunden</span></span>
+  <span>📅 <span id="statusSchedule">—</span> Termine im Kalender</span>
+  <span>🕐 Nächste Prüfung: 06:00 Uhr täglich (GitHub Actions)</span>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let allEvents = [];
+let weekFilter = 'future';
+let state = {};
+
+async function loadAll() {
+  try {
+    const [stateRes, diffRes, schedRes] = await Promise.all([
+      fetch('/api/state').then(r => r.json()),
+      fetch('/api/diff/latest').then(r => r.json()),
+      fetch('/api/schedule').then(r => r.json()),
+    ]);
+
+    state = stateRes;
+    allEvents = schedRes.events || [];
+
+    updateStats(stateRes, diffRes, schedRes);
+    renderChanges(diffRes);
+    renderSchedule();
+    renderHistory(stateRes);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function updateStats(state, diff, sched) {
+  const lastCheck = state.lastCheck
+    ? new Date(state.lastCheck).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', dateStyle: 'short', timeStyle: 'short' })
+    : '—';
+
+  document.getElementById('statLastCheck').textContent = lastCheck;
+  document.getElementById('statAdded').textContent     = diff.stats?.added ?? 0;
+  document.getElementById('statRemoved').textContent   = diff.stats?.removed ?? 0;
+  document.getElementById('statModified').textContent  = diff.stats?.modified ?? 0;
+  document.getElementById('statTotal').textContent     = sched.total ?? 0;
+  document.getElementById('statusSchedule').textContent = sched.total ?? 0;
+}
+
+function renderChanges(diff) {
+  const el = document.getElementById('changesContent');
+
+  if (!diff.hasChanges) {
+    const lastChange = state.lastChange
+      ? new Date(state.lastChange).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', dateStyle: 'full', timeStyle: 'short' })
+      : 'Noch nie';
+    el.innerHTML = `
+      <div class="no-changes">
+        <div class="icon">✅</div>
+        <div class="title">Kein Änderungen</div>
+        <div class="subtitle">Der Stundenplan ist unverändert seit der letzten Prüfung.<br>Letzte Änderung: ${lastChange}</div>
+      </div>`;
+    return;
+  }
+
+  let html = '';
+
+  if (diff.added?.length) {
+    html += `<div class="change-section">
+      <div class="change-section-title">
+        ✅ Neu hinzugekommen
+        <span class="badge badge-green">${diff.added.length}</span>
+      </div>`;
+    for (const e of diff.added) {
+      html += eventCard(e, 'added');
+    }
+    html += '</div>';
+  }
+
+  if (diff.removed?.length) {
+    html += `<div class="change-section">
+      <div class="change-section-title">
+        ❌ Entfallen / Ausgefallen
+        <span class="badge badge-red">${diff.removed.length}</span>
+      </div>`;
+    for (const e of diff.removed) {
+      html += eventCard(e, 'removed');
+    }
+    html += '</div>';
+  }
+
+  if (diff.modified?.length) {
+    html += `<div class="change-section">
+      <div class="change-section-title">
+        ✏️ Geändert
+        <span class="badge badge-yellow">${diff.modified.length}</span>
+      </div>`;
+    for (const m of diff.modified) {
+      html += modifiedCard(m);
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function eventCard(e, type) {
+  const timeStr = e.startFormatted ? `${e.startFormatted}` : e.dtstart;
+  const room    = e.location ? e.location.split(' - ')[0] : '';
+  return `<div class="event-card ${type}">
+    <div class="event-title">${esc(e.shortTitle || e.summary)}</div>
+    <div class="event-meta">
+      <span>📆 ${esc(timeStr)}</span>
+      ${room ? `<span>📍 ${esc(room)}</span>` : ''}
+      ${e.moduleCode ? `<span>🏷 ${esc(e.moduleCode)}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+function modifiedCard(m) {
+  const n = m.new, o = m.old;
+  const timeChanged = n.dtstart !== o.dtstart || n.dtend !== o.dtend;
+  const locChanged  = n.location !== o.location;
+  return `<div class="event-card modified">
+    <div class="event-title">${esc(n.shortTitle || n.summary)}</div>
+    ${timeChanged ? `<div class="diff-row">
+      <div class="diff-old"><div class="diff-label">Vorher</div>⏰ ${esc(o.startFormatted)}</div>
+      <div class="diff-new"><div class="diff-label">Jetzt</div>⏰ ${esc(n.startFormatted)}</div>
+    </div>` : ''}
+    ${locChanged ? `<div class="diff-row">
+      <div class="diff-old"><div class="diff-label">Raum vorher</div>📍 ${esc((o.location||'').split(' - ')[0])}</div>
+      <div class="diff-new"><div class="diff-label">Raum jetzt</div>📍 ${esc((n.location||'').split(' - ')[0])}</div>
+    </div>` : ''}
+  </div>`;
+}
+
+function renderSchedule() {
+  const search = (document.getElementById('schedSearch').value || '').toLowerCase();
+  const now    = new Date();
+
+  let events = allEvents.filter(e => {
+    if (weekFilter === 'future') {
+      const d = e.startDate ? new Date(e.startDate) : null;
+      if (d && d < now) return false;
+    }
+    if (search) {
+      const haystack = `${e.shortTitle} ${e.summary} ${e.location} ${e.description}`.toLowerCase();
+      return haystack.includes(search);
+    }
+    return true;
+  });
+
+  // Group by calendar week
+  const byWeek = {};
+  for (const e of events) {
+    const d = e.startDate ? new Date(e.startDate) : null;
+    const wk = d ? getWeekLabel(d) : 'Unbekannt';
+    if (!byWeek[wk]) byWeek[wk] = [];
+    byWeek[wk].push(e);
+  }
+
+  const el = document.getElementById('scheduleContent');
+  if (!events.length) {
+    el.innerHTML = '<div class="empty">Keine Termine gefunden.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const [week, evts] of Object.entries(byWeek)) {
+    html += `<div class="week-group"><div class="week-header">${week}</div>`;
+    for (const e of evts) {
+      const d      = e.startDate ? new Date(e.startDate) : null;
+      const dayStr = d ? d.toLocaleDateString('de-DE', { timeZone: 'Europe/Berlin', weekday: 'short', day: '2-digit', month: '2-digit' }) : '';
+      const tStart = e.dtstart ? e.dtstart.substring(9,11) + ':' + e.dtstart.substring(11,13) : '';
+      const tEnd   = e.dtend   ? e.dtend.substring(9,11)   + ':' + e.dtend.substring(11,13)   : '';
+      const room   = (e.location || '').split(' - ')[0];
+      html += `<div class="sched-event">
+        <div class="sched-time">${dayStr}<br>${tStart}–${tEnd}</div>
+        <div>
+          <div class="sched-title">${esc(e.shortTitle)}</div>
+          ${room ? `<div class="sched-room">📍 ${esc(room)}</div>` : ''}
+        </div>
+        ${e.moduleCode ? `<div class="sched-module">${esc(e.moduleCode)}</div>` : '<div></div>'}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+function filterWeek(f) {
+  weekFilter = f;
+  renderSchedule();
+}
+
+function renderHistory(state) {
+  const el = document.getElementById('historyContent');
+  const history = state.history || [];
+
+  if (!history.length) {
+    el.innerHTML = '<div class="empty">Noch keine Änderungen erkannt.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const rec of history) {
+    const d = new Date(rec.date).toLocaleString('de-DE', { timeZone: 'Europe/Berlin', dateStyle: 'full', timeStyle: 'short' });
+    html += `<div class="history-item">
+      <div class="history-date">📅 ${d}</div>
+      <div class="history-stats">
+        <span class="history-stat" style="color:var(--green)">✅ +${rec.stats.added}</span>
+        <span class="history-stat" style="color:var(--red)">❌ -${rec.stats.removed}</span>
+        <span class="history-stat" style="color:var(--yellow)">✏️ ~${rec.stats.modified}</span>
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function getWeekLabel(date) {
+  const d    = new Date(date);
+  const year = d.getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const week = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  const fmt = (dt) => dt.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+  return `KW ${week} — ${fmt(monday)} bis ${fmt(friday)} ${year}`;
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const names = ['changes', 'schedule', 'history'];
+    t.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.toggle('active', p.id === `tab-${name}`);
+  });
+}
+
+async function runCheck() {
+  const btn = document.getElementById('checkBtn');
+  const sp  = document.getElementById('spinner');
+  btn.disabled = true;
+  sp.classList.add('show');
+
+  try {
+    // Try local check first; if unavailable (Vercel), dispatch GitHub Actions workflow
+    const checkRes = await fetch('/api/check', { method: 'POST' });
+    if (checkRes.status === 404 || checkRes.status === 405) {
+      // Running on Vercel — trigger GitHub Actions workflow instead
+      const tRes = await fetch('/api/trigger', { method: 'POST' });
+      const td   = await tRes.json();
+      if (td.error) {
+        showToast('❌ ' + td.error, 'red');
+      } else {
+        showToast('🚀 GitHub Actions Workflow gestartet. Aktualisierung in ~2 min.', 'blue');
+      }
+    } else {
+      const d = await checkRes.json();
+      if (d.error) {
+        showToast('❌ ' + d.error, 'red');
+      } else if (d.hasChanges) {
+        showToast(`✅ +${d.stats.added} neu, -${d.stats.removed} entfallen, ~${d.stats.modified} geändert`, 'green');
+      } else {
+        showToast('✅ Keine Änderungen gefunden', 'blue');
+      }
+      await loadAll();
+    }
+  } catch (e) {
+    showToast('❌ Fehler: ' + e.message, 'red');
+  } finally {
+    btn.disabled = false;
+    sp.classList.remove('show');
+  }
+}
+
+function showToast(msg, color) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.borderColor = color === 'green' ? 'var(--green)' : color === 'red' ? 'var(--red)' : 'var(--accent)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 5000);
+}
+
+function esc(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+loadAll();
+</script>
+</body>
+</html>

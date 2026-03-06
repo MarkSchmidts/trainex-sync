@@ -1,0 +1,24 @@
+{
+  "name": "trainex-sync",
+  "version": "1.0.0",
+  "description": "MSH TraiNex schedule sync with change detection and Google Calendar integration",
+  "main": "src/server.js",
+  "scripts": {
+    "test": "node test/diff.test.js",
+    "check": "node src/check.js",
+    "dashboard": "node src/server.js",
+    "dev": "node src/server.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "axios-cookiejar-support": "^4.0.7",
+    "tough-cookie": "^4.1.3",
+    "node-ical": "^0.19.0",
+    "nodemailer": "^6.9.0",
+    "express": "^4.18.0",
+    "dotenv": "^16.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

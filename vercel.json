@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "name": "trainex-sync",
+  "buildCommand": "npm test || true",
+  "outputDirectory": "public",
+  "routes": [
+    { "src": "/api/state",        "dest": "/api/state.js" },
+    { "src": "/api/schedule",     "dest": "/api/schedule.js" },
+    { "src": "/api/diff/latest",  "dest": "/api/diff.js" },
+    { "src": "/api/download",     "dest": "/api/download.js" },
+    { "src": "/api/trigger",      "dest": "/api/trigger.js" },
+    { "src": "/(.*)",             "dest": "/index.html" }
+  ],
+  "env": {
+    "GITHUB_REPOSITORY": "MarkSchmidts/trainex-sync"
+  }
+}
