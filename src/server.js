@@ -10,7 +10,7 @@ const express = require('express');
 const path    = require('path');
 const fs      = require('fs');
 const store   = require('./store');
-const { diffIcal, parseIcal, renderMarkdown, parseDate, formatDate, shortSummary } = require('./diff');
+const { diffIcal, parseIcal, renderMarkdown, parseDate, formatDate, shortSummary, cleanIcal } = require('./diff');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -33,9 +33,11 @@ app.get('/api/schedule', (req, res) => {
 
   const events = parseIcal(ical).map(e => ({
     ...e,
-    startDate:  parseDate(e.dtstart)?.toISOString(),
-    endDate:    parseDate(e.dtend)?.toISOString(),
-    shortTitle: shortSummary(e.summary),
+    startDate:      parseDate(e.dtstart)?.toISOString(),
+    endDate:        parseDate(e.dtend)?.toISOString(),
+    shortTitle:     shortSummary(e.summary),
+    startFormatted: formatDate(parseDate(e.dtstart)),
+    endFormatted:   formatDate(parseDate(e.dtend)),
   }));
   res.json({ events, total: events.length });
 });
@@ -99,10 +101,11 @@ app.post('/api/check', async (req, res) => {
   }
 });
 
-/** GET /api/download — download latest iCal file */
+/** GET /api/download — download cleaned iCal file (tagged for Google Calendar) */
 app.get('/api/download', (req, res) => {
-  const ical = store.readLatest();
-  if (!ical) return res.status(404).send('No iCal available. Run a check first.');
+  const raw = store.readLatest();
+  if (!raw) return res.status(404).send('No iCal available. Run a check first.');
+  const ical = cleanIcal(raw, '[MSH]');
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="msh-stundenplan.ics"');
   res.send(ical);

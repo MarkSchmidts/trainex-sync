@@ -244,4 +244,49 @@ function renderMarkdown(diff, checkDate) {
   return lines.join('\n');
 }
 
-module.exports = { diffIcal, parseIcal, renderMarkdown, parseDate, formatDate, shortSummary };
+/**
+ * Clean a raw iCal string for calendar import:
+ *   - Strip "BaMTVZ - " programme prefix from SUMMARY
+ *   - Strip "  -  T32_msh552" group suffix from SUMMARY
+ *   - Shorten DESCRIPTION to key info (course + instructor + time)
+ *   - Add a [MSH] tag prefix for easy filtering/deletion in Google Calendar
+ */
+function cleanIcal(icalStr, tag = '[MSH]') {
+  return icalStr
+    // Clean SUMMARY lines
+    .replace(/^(SUMMARY:.*)$/gm, (_, line) => {
+      let s = line.slice('SUMMARY:'.length);
+      s = s.replace(/\s*-\s*T32_\w+\s*$/i, '').trim(); // remove T32_msh552
+      s = s.replace(/^Ba\w+\s*-\s*/i, '');              // remove "BaMTVZ - "
+      // Remove trailing location part after last " - "
+      const parts = s.split(/\s+-\s+/);
+      if (parts.length >= 2) {
+        // last part is usually the room, second-to-last can be room info too
+        // Keep: module + title; drop trailing room if already in LOCATION
+        s = parts.slice(0, -1).join(' – ');
+      }
+      s = s.trim();
+      return `SUMMARY:${tag} ${s}`;
+    })
+    // Clean DESCRIPTION: "Dozent: X | ab HH:MM Uhr | Aktuelle Termine im TraiNex prüfen"
+    .replace(/^(DESCRIPTION:.*)$/gm, (_, line) => {
+      let desc = line.slice('DESCRIPTION:'.length);
+      // Extract instructor: appears after the last '/' before ' ab ' or end
+      const slashIdx = desc.lastIndexOf('/');
+      let instructor = '';
+      if (slashIdx !== -1) {
+        instructor = desc.slice(slashIdx + 1).split(/\s+ab\s+/)[0].trim();
+      }
+      // Extract time
+      const timeMatch = desc.match(/ab (\d{2}:\d{2}) Uhr/);
+      const time = timeMatch ? timeMatch[1] + ' Uhr' : '';
+      const parts = [
+        instructor ? `Dozent: ${instructor}` : '',
+        time       ? `Start: ${time}`       : '',
+        'Aktuelle Termine im TraiNex prüfen.',
+      ].filter(Boolean);
+      return `DESCRIPTION:${parts.join(' | ')}`;
+    });
+}
+
+module.exports = { diffIcal, parseIcal, renderMarkdown, parseDate, formatDate, shortSummary, cleanIcal };
