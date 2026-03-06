@@ -123,12 +123,24 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
 
   onProgress({ step: 'create', msg: `Erstelle ${toSync.length} Termine...`, total: toSync.length, done: 0 });
 
-  const synced = await _sequentialSync(toSync, calendarId, (created, attempted, total) => {
-    onProgress({ step: 'create', msg: `Erstelle Termine... ${created} erstellt (${attempted}/${total})`, total, done: attempted });
-  });
+  let synced = [];
+  let syncError = null;
+  try {
+    synced = await _sequentialSync(toSync, calendarId, (created, attempted, total) => {
+      onProgress({ step: 'create', msg: `Erstelle Termine... ${created} erstellt (${attempted}/${total})`, total, done: attempted });
+    });
+  } catch (err) {
+    syncError = err;
+  }
 
-  // 4. Persist synced IDs
-  storeSynced(synced, resync);
+  // 4. Persist whatever was synced (even partial)
+  if (synced.length > 0) storeSynced(synced, resync);
+
+  if (syncError) {
+    onProgress({ step: 'error', msg: `⚠️ Sync unterbrochen: ${syncError.message} (${synced.length} gespeichert)`, done: synced.length, total: toSync.length });
+    throw syncError;
+  }
+
   onProgress({ step: 'done', msg: `✅ ${synced.length} Termine synchronisiert`, done: synced.length, total: toSync.length });
   return { synced: synced.length };
 }
@@ -140,6 +152,7 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
 async function _sequentialSync(events, calendarId, onProgress) {
   const synced = [];
   for (let i = 0; i < events.length; i++) {
+    // throws if token is gone — propagates to gcalSync to save partial results
     const result = await _createEvent(calendarId, events[i]);
     if (result) synced.push(result);
     onProgress(synced.length, i + 1, events.length);
@@ -154,7 +167,9 @@ async function _createEvent(calendarId, e, maxRetries = 4) {
   const endDt   = parseDtstring(e.dtend);
   if (!startDt || !endDt) return null;
 
-  const instructor = (e.description || '').match(/Dozent:\s*([^|]+)/)?.[1]?.trim() || '';
+  // TraiNex description format: ".../ Prof. Dr. XYZ  ab 09:45 Uhr - ..."
+  const instrRaw   = (e.description || '').split('/').pop() || '';
+  const instructor = instrRaw.split(/\s+ab\s+/)[0].trim();
   const room       = (e.location || '').split(' – ')[0].split(' - ')[0].trim();
 
   const body = {
@@ -184,6 +199,8 @@ async function _createEvent(calendarId, e, maxRetries = 4) {
         { method: 'POST', body: JSON.stringify(body) }
       );
     } catch (err) {
+      // If we're disconnected, throw immediately — retrying is pointless
+      if (!gcalIsConnected()) throw err;
       if (attempt < maxRetries) { await _sleep(1000); continue; }
       console.warn('[gcal] Network error:', e.shortTitle, err.message);
       return null;
@@ -197,7 +214,11 @@ async function _createEvent(calendarId, e, maxRetries = 4) {
     if (r.status === 401) return null; // token refresh handled by gcalFetch caller
 
     const d = await r.json();
-    return d.id ? { id: d.id, fingerprint: e.fingerprint } : null;
+    if (!d.id) {
+      console.warn('[gcal] Event creation failed:', r.status, e.shortTitle || e.summary, JSON.stringify(d).slice(0, 300));
+      return null;
+    }
+    return { id: d.id, fingerprint: e.fingerprint };
   }
   return null;
 }

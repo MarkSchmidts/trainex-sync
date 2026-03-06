@@ -1078,6 +1078,7 @@ async function gcalSyncClick(resync) {
   } catch (e) {
     showToast('❌ Sync fehlgeschlagen: ' + e.message, 'red');
     prog.classList.remove('show');
+    updateSyncStats();
   } finally {
     syncBtn.disabled   = false;
     resyncBtn.disabled = false;
