@@ -90,7 +90,7 @@ async function gcalListCalendars() {
 // ── Sync ───────────────────────────────────────────────────────────────────────
 
 const DASHBOARD_URL  = 'https://trainex-sync-mark-schmidts-projects.vercel.app';
-const EVENT_DELAY_MS = 120;  // ms between sequential creates (~7 req/s, comfortably under 10/s)
+const EVENT_DELAY_MS = 200;  // ms between sequential creates (5 req/s, safely under 10/s quota)
 
 /**
  * Sync MSH schedule events to Google Calendar.
@@ -162,7 +162,7 @@ async function _sequentialSync(events, calendarId, onProgress) {
 }
 
 /** Create one event with exponential-backoff retry on 429/503. */
-async function _createEvent(calendarId, e, maxRetries = 4) {
+async function _createEvent(calendarId, e, maxRetries = 6) {
   const startDt = parseDtstring(e.dtstart);
   const endDt   = parseDtstring(e.dtend);
   if (!startDt || !endDt) return null;
