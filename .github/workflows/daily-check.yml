@@ -1,12 +1,12 @@
 name: Daily TraiNex Check
 
 on:
-  schedule:
-    # Run daily at 06:00 UTC (= 07:00 Berlin winter / 08:00 summer)
-    - cron: '0 6 * * *'
-
-  # Allow manual trigger from GitHub Actions UI
+  # Manual trigger from GitHub UI (useful for testing)
   workflow_dispatch:
+  # Disabled schedule — the VPS Docker container handles daily scraping instead.
+  # Uncomment below if you switch to a self-hosted runner instead of VPS Docker.
+  # schedule:
+  #   - cron: '0 6 * * *'
 
 permissions:
   contents: write
@@ -15,47 +15,32 @@ permissions:
 jobs:
   check:
     name: Check TraiNex Schedule
-    # ── Runner options ──────────────────────────────────────────────────────
-    # Option A (recommended): self-hosted runner on your Mac/PC/VPS.
-    #   → Bypasses Cloudflare's datacenter IP block.
-    #   → See README for setup instructions.
-    #
-    # Option B: GitHub-hosted runner.
-    #   → May fail with 403 if Cloudflare blocks the IP.
-    #   → Uncomment the line below and comment out 'self-hosted' to try it.
-    # ────────────────────────────────────────────────────────────────────────
+    # Runs on your VPS self-hosted runner.
+    # Setup: https://github.com/MarkSchmidts/trainex-sync/settings/actions/runners
+    # Note: this job is only used for manual "trigger from GitHub UI" runs.
+    #       The daily automatic check is handled by Docker on the VPS (src/daemon.js).
     runs-on: self-hosted
-    # runs-on: ubuntu-latest   # ← uncomment to use GitHub-hosted runner
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
+      - run: npm ci
+      - run: npm test
 
       - name: Run schedule check
         env:
-          TRAINEX_USER:        ${{ secrets.TRAINEX_USER }}
-          TRAINEX_PASS:        ${{ secrets.TRAINEX_PASS }}
-          GITHUB_TOKEN:        ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REPOSITORY:   ${{ github.repository }}
-          SMTP_HOST:           ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:           ${{ secrets.SMTP_PORT }}
-          SMTP_USER:           ${{ secrets.SMTP_USER }}
-          SMTP_PASS:           ${{ secrets.SMTP_PASS }}
-          NOTIFY_EMAIL:        ${{ secrets.NOTIFY_EMAIL }}
+          TRAINEX_USER:      ${{ secrets.TRAINEX_USER }}
+          TRAINEX_PASS:      ${{ secrets.TRAINEX_PASS }}
+          GITHUB_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          NOTIFY_EMAIL:      ${{ secrets.NOTIFY_EMAIL }}
         run: npm run check
 
       - name: Commit updated schedule data
@@ -64,7 +49,7 @@ jobs:
           git config user.email "trainex-sync[bot]@users.noreply.github.com"
           git add data/
           if git diff --staged --quiet; then
-            echo "No data changes to commit."
+            echo "No data changes."
           else
             git commit -m "chore: update schedule snapshot $(date -u '+%Y-%m-%d')"
             git push

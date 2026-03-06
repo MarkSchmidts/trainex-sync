@@ -536,7 +536,7 @@
 </div>
 
 <!-- Event detail modal -->
-<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;display:flex;align-items:center;justify-content:center;" onclick="closeModal(event)" hidden>
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:300;align-items:center;justify-content:center;" onclick="closeModal(event)" hidden>
   <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:500px;width:90%;position:relative;" onclick="event.stopPropagation()">
     <button onclick="closeModal()" style="position:absolute;top:12px;right:12px;background:var(--surface2);border:none;color:var(--text);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px">✕</button>
     <div id="modalContent"></div>

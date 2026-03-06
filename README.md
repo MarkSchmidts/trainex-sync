@@ -38,6 +38,53 @@ Vercel (auto-deploys on each push)
 
 ---
 
+## Deployment on VPS (recommended)
+
+The VPS handles everything. No self-hosted runner needed — the Docker daemon runs the daily check, and the dashboard runs as a web server. Vercel is optional (keep it for a nice URL, or just use the VPS directly).
+
+```
+VPS
+├── checker container (src/daemon.js)  — runs at 06:00, commits data/ to GitHub
+└── dashboard container (src/server.js) — serves http://vps-ip:3000
+
+GitHub repo
+└── data/ (auto-updated by VPS commits)
+
+Vercel (optional)
+└── reads data/ from repo, serves https://trainex-sync.vercel.app
+```
+
+### Quick start on VPS
+
+```bash
+# 1. Clone the repo (with deploy key or HTTPS)
+git clone https://github.com/MarkSchmidts/trainex-sync.git
+cd trainex-sync
+
+# 2. Create .env with credentials
+cat > .env << EOF
+TRAINEX_USER=mark.schmidts
+TRAINEX_PASS=your_password
+GITHUB_TOKEN=ghp_...          # PAT with repo scope, for pushing data commits
+NOTIFY_EMAIL=mark.schmidts@student.medicalschool-hamburg.de
+EOF
+
+# 3. Run with Docker Compose
+docker compose up -d
+
+# 4. Check logs
+docker compose logs -f
+
+# 5. Dashboard is now at http://your-vps-ip:3000
+```
+
+That's it. The `checker` container wakes up at 06:00 UTC, downloads the iCal, diffs it, notifies via GitHub Issues if there are changes, and commits the updated data. The `dashboard` container serves the web UI continuously.
+
+> **No Vercel needed** if you're happy with `http://vps-ip:3000`.
+> Keep Vercel if you want a public HTTPS URL that auto-updates from GitHub commits.
+
+---
+
 ## Setup
 
 ### 1. GitHub Secrets (already configured)
