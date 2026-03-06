@@ -4,7 +4,7 @@
   "description": "MSH TraiNex schedule sync with change detection and Google Calendar integration",
   "main": "src/server.js",
   "scripts": {
-    "test": "node test/diff.test.js",
+    "test": "node test/diff.test.js && node test/gcal-sync.test.js",
     "check": "node src/check.js",
     "dashboard": "node src/server.js",
     "dev": "node src/server.js"

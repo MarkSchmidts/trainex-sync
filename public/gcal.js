@@ -89,6 +89,10 @@ async function gcalListCalendars() {
 
 // ── Sync ───────────────────────────────────────────────────────────────────────
 
+const DASHBOARD_URL  = 'https://trainex-sync-mark-schmidts-projects.vercel.app';
+const BATCH_SIZE     = 8;    // parallel requests per batch (stays under 10 req/s quota)
+const BATCH_DELAY_MS = 800;  // ms between batches
+
 /**
  * Sync MSH schedule events to Google Calendar.
  * @param {{ resync?: boolean, onProgress?: function }} opts
@@ -110,7 +114,7 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
     await gcalDeleteSynced(calendarId, onProgress);
   }
 
-  // 3. Create new events (parallel batches to stay fast)
+  // 3. Create new events
   const toSync = resync ? events : events.filter(e => !isSynced(e.fingerprint));
 
   if (!toSync.length) {
@@ -120,17 +124,9 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
 
   onProgress({ step: 'create', msg: `Erstelle ${toSync.length} Termine...`, total: toSync.length, done: 0 });
 
-  const synced = [];
-  let done     = 0;
-  const BATCH  = 15; // parallel requests per batch
-
-  for (let i = 0; i < toSync.length; i += BATCH) {
-    const batch   = toSync.slice(i, i + BATCH);
-    const results = await Promise.all(batch.map(e => _createEvent(calendarId, e)));
-    synced.push(...results.filter(Boolean));
-    done += batch.length;
-    onProgress({ step: 'create', msg: `Erstelle Termine... (${done}/${toSync.length})`, total: toSync.length, done });
-  }
+  const synced = await _batchSync(toSync, calendarId, (done, total) => {
+    onProgress({ step: 'create', msg: `Erstelle Termine... (${done}/${total})`, total, done });
+  });
 
   // 4. Persist synced IDs
   storeSynced(synced, resync);
@@ -138,7 +134,23 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
   return { synced: synced.length };
 }
 
-async function _createEvent(calendarId, e) {
+/** Batched sync with rate-limit retry — mirrors src/gcal-sync.js batchSync. */
+async function _batchSync(events, calendarId, onBatchDone) {
+  const synced = [];
+  let done = 0;
+  for (let i = 0; i < events.length; i += BATCH_SIZE) {
+    const batch   = events.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(e => _createEvent(calendarId, e)));
+    synced.push(...results.filter(Boolean));
+    done += batch.length;
+    onBatchDone(done, events.length);
+    if (i + BATCH_SIZE < events.length) await _sleep(BATCH_DELAY_MS);
+  }
+  return synced;
+}
+
+/** Create one event with exponential-backoff retry on 429/503. */
+async function _createEvent(calendarId, e, maxRetries = 4) {
   const startDt = parseDtstring(e.dtstart);
   const endDt   = parseDtstring(e.dtend);
   if (!startDt || !endDt) return null;
@@ -147,13 +159,14 @@ async function _createEvent(calendarId, e) {
   const room       = (e.location || '').split(' – ')[0].split(' - ')[0].trim();
 
   const body = {
-    summary: `[MSH] ${e.shortTitle || e.summary}`,
+    summary: e.shortTitle || e.summary,   // no prefix, no tag
     description: [
       e.moduleCode ? `Modul: ${e.moduleCode}` : null,
       instructor   ? `Dozent: ${instructor}`  : null,
       room         ? `Raum: ${room}`          : null,
       '',
       'Aktuelle Termine immer im TraiNex prüfen.',
+      `Änderungen: ${DASHBOARD_URL}`,
     ].filter(l => l !== null).join('\n'),
     location: room ? `${room}, MSH Medical School Hamburg, Am Kaiserkai 1, 20457 Hamburg` : undefined,
     start: { dateTime: startDt.toISOString(), timeZone: TIMEZONE },
@@ -164,27 +177,41 @@ async function _createEvent(calendarId, e) {
     },
   };
 
-  try {
-    const r = await gcalFetch(
-      `${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events`,
-      { method: 'POST', body: JSON.stringify(body) }
-    );
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let r;
+    try {
+      r = await gcalFetch(
+        `${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events`,
+        { method: 'POST', body: JSON.stringify(body) }
+      );
+    } catch (err) {
+      if (attempt < maxRetries) { await _sleep(1000); continue; }
+      console.warn('[gcal] Network error:', e.shortTitle, err.message);
+      return null;
+    }
+
+    if (r.status === 429 || r.status === 503) {
+      if (attempt < maxRetries) { await _sleep(1000 * Math.pow(2, attempt)); continue; }
+      console.warn('[gcal] Rate limited, giving up on:', e.shortTitle);
+      return null;
+    }
+    if (r.status === 401) return null; // token refresh handled by gcalFetch caller
+
     const d = await r.json();
-    if (d.id) return { id: d.id, fingerprint: e.fingerprint };
-  } catch (err) {
-    console.warn('[gcal] Failed to create:', e.shortTitle, err.message);
+    return d.id ? { id: d.id, fingerprint: e.fingerprint } : null;
   }
   return null;
 }
+
+function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /** Delete all synced MSH events from Google Calendar. */
 async function gcalDeleteSynced(calendarId, onProgress = () => {}) {
   const stored = getSyncedEvents();
   let deleted  = 0;
-  const BATCH  = 15;
 
-  for (let i = 0; i < stored.length; i += BATCH) {
-    await Promise.all(stored.slice(i, i + BATCH).map(async ({ id }) => {
+  for (let i = 0; i < stored.length; i += BATCH_SIZE) {
+    await Promise.all(stored.slice(i, i + BATCH_SIZE).map(async ({ id }) => {
       try {
         await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${id}`, { method: 'DELETE' });
         deleted++;
@@ -199,8 +226,8 @@ async function gcalDeleteSynced(calendarId, onProgress = () => {}) {
       `?privateExtendedProperty=mshSync%3D1&singleEvents=true&maxResults=2500`
     );
     const d = await r.json();
-    for (let i = 0; i < (d.items || []).length; i += BATCH) {
-      await Promise.all(d.items.slice(i, i + BATCH).map(async evt => {
+    for (let i = 0; i < (d.items || []).length; i += BATCH_SIZE) {
+      await Promise.all(d.items.slice(i, i + BATCH_SIZE).map(async evt => {
         try {
           await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${evt.id}`, { method: 'DELETE' });
           deleted++;
