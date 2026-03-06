@@ -1,8 +1,5 @@
 {
   "version": 2,
-  "name": "trainex-sync",
-  "buildCommand": "npm test || true",
-  "outputDirectory": "public",
   "routes": [
     { "src": "/api/state",        "dest": "/api/state.js" },
     { "src": "/api/schedule",     "dest": "/api/schedule.js" },

@@ -5,3 +5,4 @@ node_modules/
 # Keep data directory tracked (snapshots are small iCal text files)
 # but ignore local test artifacts
 /tmp/
+.vercel
