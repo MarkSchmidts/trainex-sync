@@ -1,12 +1,18 @@
 {
   "version": 2,
   "routes": [
-    { "src": "/api/state",        "dest": "/api/state.js" },
-    { "src": "/api/schedule",     "dest": "/api/schedule.js" },
-    { "src": "/api/diff/latest",  "dest": "/api/diff.js" },
-    { "src": "/api/download",     "dest": "/api/download.js" },
-    { "src": "/api/trigger",      "dest": "/api/trigger.js" },
-    { "src": "/(.*)",             "dest": "/index.html" }
+    { "src": "/api/state",             "dest": "/api/state.js" },
+    { "src": "/api/schedule",          "dest": "/api/schedule.js" },
+    { "src": "/api/diff/latest",       "dest": "/api/diff.js" },
+    { "src": "/api/download",          "dest": "/api/download.js" },
+    { "src": "/api/trigger",           "dest": "/api/trigger.js" },
+    { "src": "/api/config",            "dest": "/api/config.js" },
+    { "src": "/api/auth/google",       "dest": "/api/auth/google.js" },
+    { "src": "/api/auth/callback",     "dest": "/api/auth/callback.js" },
+    { "src": "/api/auth/refresh",      "dest": "/api/auth/refresh.js" },
+    { "src": "/api/auth/disconnect",   "dest": "/api/auth/disconnect.js" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)",                  "dest": "/index.html" }
   ],
   "env": {
     "GITHUB_REPOSITORY": "MarkSchmidts/trainex-sync"

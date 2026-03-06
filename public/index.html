@@ -478,50 +478,26 @@
   <!-- Google Calendar tab -->
   <div class="tab-panel" id="tab-gcal">
 
-    <!-- Step 1: Client ID -->
+    <!-- Connection status -->
     <div class="gcal-section">
-      <div class="gcal-section-title">⚙️ Schritt 1 — Google OAuth Client ID</div>
-      <div class="gcal-row">
-        <input type="text" class="search-input" id="gcalClientId"
-          placeholder="1234567890-abc...apps.googleusercontent.com"
-          style="flex:1;min-width:280px" />
-        <button class="btn btn-secondary" onclick="gcalSaveClientId()">Speichern</button>
-      </div>
-      <div class="gcal-hint">
-        <strong>Einmalige Einrichtung:</strong><br>
-        1. <a href="https://console.cloud.google.com" target="_blank" style="color:var(--accent)">console.cloud.google.com</a>
-           → Neues Projekt → APIs &amp; Services → Bibliothek → <em>Google Calendar API</em> aktivieren<br>
-        2. APIs &amp; Services → Anmeldedaten → OAuth-Client-ID erstellen → <em>Webanwendung</em><br>
-        3. Autorisierte JS-Ursprünge:
-           <code>http://localhost:3000</code>
-           <code>https://trainex-sync-mark-schmidts-projects.vercel.app</code><br>
-        4. Client-ID hier einfügen und speichern.
-      </div>
-    </div>
-
-    <!-- Step 2: Connect -->
-    <div class="gcal-section">
-      <div class="gcal-section-title">🔗 Schritt 2 — Mit Google verbinden</div>
+      <div class="gcal-section-title">🔗 Google Konto</div>
       <div class="gcal-row">
         <div class="gcal-status" id="gcalStatusBox">
           <span class="dot dot-red" id="gcalDot"></span>
           <span id="gcalStatusText">Nicht verbunden</span>
         </div>
         <button class="btn btn-google" id="gcalConnectBtn" onclick="gcalConnectClick()">
-          🔑 Mit Google verbinden
+          Mit Google anmelden
         </button>
         <button class="btn btn-secondary" id="gcalDisconnectBtn" onclick="gcalDisconnectClick()" style="display:none">
-          Trennen
+          Abmelden
         </button>
-      </div>
-      <div class="gcal-hint" id="gcalReadyHint" style="display:none">
-        Google API geladen. Client ID gespeichert — klicke "Mit Google verbinden", um den OAuth-Dialog zu öffnen.
       </div>
     </div>
 
-    <!-- Step 3: Sync (shown after connect) -->
+    <!-- Sync (shown after connect) -->
     <div class="gcal-section" id="gcalSyncSection" style="display:none">
-      <div class="gcal-section-title">📅 Schritt 3 — Termine synchronisieren</div>
+      <div class="gcal-section-title">📅 Termine synchronisieren</div>
 
       <div class="gcal-row" style="margin-bottom:12px">
         <label style="color:var(--text-dim);font-size:12px;white-space:nowrap">Ziel-Kalender:</label>
@@ -569,6 +545,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="/gcal.js"></script>
 <script>
 let allEvents = [];
 let weekFilter = 'future';
@@ -1009,63 +986,41 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal()
 // ── Google Calendar UI ────────────────────────────────────────────────────────
 
 function gcalInit() {
-  // Restore stored client ID into input
-  const stored = localStorage.getItem('msh_gcal_client_id') || '';
-  if (stored) document.getElementById('gcalClientId').value = stored;
   updateSyncStats();
-  // Check if already connected (token still in memory after page interactions)
-  if (typeof gcalIsConnected === 'function' && gcalIsConnected()) {
+  if (gcalIsConnected()) updateGcalUI(true);
+  // Returned from OAuth redirect?
+  if (window._gcalJustConnected) {
+    window._gcalJustConnected = false;
     updateGcalUI(true);
+    showToast('✅ Mit Google verbunden!', 'green');
+    switchTab('gcal');
+  }
+  if (window._gcalError) {
+    showToast('❌ Google Fehler: ' + window._gcalError, 'red');
+    window._gcalError = null;
   }
 }
 
-function gcalSaveClientId() {
-  const id = document.getElementById('gcalClientId').value.trim();
-  if (!id) { showToast('Bitte eine gültige Client ID eingeben', 'red'); return; }
-  if (typeof gcalSetClientId === 'function') {
-    gcalSetClientId(id);
-    showToast('✅ Client ID gespeichert. Seite neu laden um GIS zu initialisieren.', 'blue');
-    setTimeout(() => location.reload(), 1800);
-  } else {
-    localStorage.setItem('msh_gcal_client_id', id);
-    showToast('✅ Client ID gespeichert. Seite neu laden.', 'blue');
-    setTimeout(() => location.reload(), 1800);
-  }
+function gcalConnectClick() { gcalConnect(); }
+
+async function gcalDisconnectClick() {
+  await gcalDisconnect();
+  updateGcalUI(false);
 }
 
 function gcalOnCalSelect() {
-  const id = document.getElementById('gcalCalSelect').value;
-  if (typeof setCalendarId === 'function') setCalendarId(id);
-}
-
-async function gcalConnectClick() {
-  const btn = document.getElementById('gcalConnectBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ Verbinde...';
-  try {
-    await gcalConnect();
-  } catch (e) {
-    showToast('❌ Verbindung fehlgeschlagen: ' + e.message, 'red');
-    btn.disabled = false;
-    btn.innerHTML = '🔑 Mit Google verbinden';
-  }
-}
-
-function gcalDisconnectClick() {
-  gcalDisconnect();
+  setCalendarId(document.getElementById('gcalCalSelect').value);
 }
 
 async function gcalLoadCalendars() {
   try {
     const cals = await gcalListCalendars();
     const sel  = document.getElementById('gcalCalSelect');
-    const cur  = localStorage.getItem('msh_gcal_calendar_id') || 'primary';
+    const cur  = getCalendarId();
     sel.innerHTML = cals.map(c =>
       `<option value="${esc(c.id)}"${c.id === cur ? ' selected' : ''}>${esc(c.summary)}</option>`
-    ).join('');
-  } catch (e) {
-    console.warn('[gcal] Could not list calendars:', e);
-  }
+    ).join('') || '<option value="primary">Primärer Kalender</option>';
+  } catch (e) { console.warn('[gcal] calendar list:', e); }
 }
 
 function updateGcalUI(connected) {
@@ -1074,21 +1029,21 @@ function updateGcalUI(connected) {
   const conn = document.getElementById('gcalConnectBtn');
   const disc = document.getElementById('gcalDisconnectBtn');
   const sync = document.getElementById('gcalSyncSection');
-  const hint = document.getElementById('gcalReadyHint');
   if (connected) {
-    dot.className = 'dot dot-green';
-    txt.textContent = 'Verbunden mit Google';
+    dot.className  = 'dot dot-green';
     conn.style.display = 'none';
     disc.style.display = '';
     sync.style.display = '';
-    if (hint) hint.style.display = 'none';
+    // Show user email
+    gcalGetUserInfo().then(info => {
+      txt.textContent = info?.email ? `Verbunden: ${info.email}` : 'Verbunden mit Google';
+    });
     gcalLoadCalendars();
+    updateSyncStats();
   } else {
-    dot.className = 'dot dot-red';
-    txt.textContent = 'Nicht verbunden';
+    dot.className      = 'dot dot-red';
+    txt.textContent    = 'Nicht verbunden';
     conn.style.display = '';
-    conn.disabled = false;
-    conn.innerHTML = '🔑 Mit Google verbinden';
     disc.style.display = 'none';
     sync.style.display = 'none';
   }
@@ -1111,9 +1066,7 @@ async function gcalSyncClick(resync) {
       resync,
       onProgress(p) {
         progMsg.textContent = p.msg;
-        if (p.total > 0) {
-          progBar.style.width = Math.round((p.done / p.total) * 100) + '%';
-        }
+        if (p.total > 0) progBar.style.width = Math.round((p.done / p.total) * 100) + '%';
         if (p.step === 'done') {
           progBar.style.width = '100%';
           showToast(p.msg, 'green');
@@ -1133,29 +1086,18 @@ async function gcalSyncClick(resync) {
 
 function updateSyncStats() {
   const el = document.getElementById('gcalSyncStats');
-  if (!el || typeof getSyncStats !== 'function') return;
+  if (!el) return;
   const { syncedCount } = getSyncStats();
   el.textContent = syncedCount > 0
     ? `✅ ${syncedCount} Termine aktuell in Google Calendar synchronisiert`
     : 'Noch keine Termine synchronisiert.';
 }
 
-// gcal event listeners
-window.addEventListener('gcal:ready', () => {
-  const hint = document.getElementById('gcalReadyHint');
-  if (hint && localStorage.getItem('msh_gcal_client_id')) hint.style.display = '';
-});
-window.addEventListener('gcal:connected',    () => updateGcalUI(true));
 window.addEventListener('gcal:disconnected', () => updateGcalUI(false));
-window.addEventListener('gcal:error',        (e) => showToast('❌ Google: ' + e.detail, 'red'));
 
 loadAll();
 gcalInit();
 </script>
 
-<!-- Google API client + Identity Services (loaded after gcal.js defines callbacks) -->
-<script src="/gcal.js"></script>
-<script async defer src="https://apis.google.com/js/api.js" onload="onGapiLoaded()"></script>
-<script async defer src="https://accounts.google.com/gsi/client" onload="onGisLoaded()"></script>
 </body>
 </html>
