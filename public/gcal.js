@@ -227,37 +227,61 @@ function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /** Delete all synced MSH events from Google Calendar. */
 async function gcalDeleteSynced(calendarId, onProgress = () => {}) {
-  const stored = getSyncedEvents();
-  let deleted  = 0;
+  let deleted = 0;
 
-  for (let i = 0; i < stored.length; i += 5) {
-    await Promise.all(stored.slice(i, i + 5).map(async ({ id }) => {
-      try {
-        await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${id}`, { method: 'DELETE' });
+  // Helper: delete one event by ID, returns true on success (204) or already-gone (404/410)
+  async function _deleteOne(id) {
+    try {
+      const r = await gcalFetch(
+        `${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${id}`,
+        { method: 'DELETE' }
+      );
+      if (r.status === 204 || r.status === 404 || r.status === 410) {
         deleted++;
-      } catch {}
-    }));
+        return true;
+      }
+      // 429 or other — caller should retry
+      return false;
+    } catch {
+      return false;
+    }
   }
 
-  // Fallback: search by extendedProperty
-  try {
-    const r = await gcalFetch(
-      `${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events` +
-      `?privateExtendedProperty=mshSync%3D1&singleEvents=true&maxResults=2500`
-    );
-    const d = await r.json();
-    for (let i = 0; i < (d.items || []).length; i += 5) {
-      await Promise.all(d.items.slice(i, i + 5).map(async evt => {
-        try {
-          await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${evt.id}`, { method: 'DELETE' });
-          deleted++;
-        } catch {}
-      }));
+  // Phase 1: delete stored IDs from localStorage
+  const stored = getSyncedEvents();
+  for (let i = 0; i < stored.length; i++) {
+    const ok = await _deleteOne(stored[i].id);
+    if (!ok) {
+      // Rate limited — back off and retry once
+      await _sleep(2000);
+      await _deleteOne(stored[i].id);
     }
-  } catch {}
+    if (i % 10 === 0) onProgress({ step: 'delete', msg: `Lösche Termine... ${deleted}/${stored.length}` });
+    await _sleep(150);
+  }
+
+  // Phase 2: fallback search — catch any events not in localStorage (e.g. from old sessions)
+  // Paginate through all results
+  let pageToken = '';
+  do {
+    try {
+      const url = `${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events` +
+        `?privateExtendedProperty=mshSync%3D1&maxResults=250` +
+        (pageToken ? `&pageToken=${pageToken}` : '');
+      const r = await gcalFetch(url);
+      const d = await r.json();
+      pageToken = d.nextPageToken || '';
+      for (const evt of (d.items || [])) {
+        await _deleteOne(evt.id);
+        await _sleep(150);
+      }
+    } catch {
+      break;
+    }
+  } while (pageToken);
 
   clearSynced();
-  onProgress({ step: 'delete', msg: `Gelöscht: ${deleted} alte Termine` });
+  onProgress({ step: 'delete', msg: `Gelöscht: ${deleted} Termine` });
   return deleted;
 }
 
