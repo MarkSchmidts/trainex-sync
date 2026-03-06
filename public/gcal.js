@@ -90,8 +90,7 @@ async function gcalListCalendars() {
 // ── Sync ───────────────────────────────────────────────────────────────────────
 
 const DASHBOARD_URL  = 'https://trainex-sync-mark-schmidts-projects.vercel.app';
-const BATCH_SIZE     = 8;    // parallel requests per batch (stays under 10 req/s quota)
-const BATCH_DELAY_MS = 800;  // ms between batches
+const EVENT_DELAY_MS = 120;  // ms between sequential creates (~7 req/s, comfortably under 10/s)
 
 /**
  * Sync MSH schedule events to Google Calendar.
@@ -124,8 +123,8 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
 
   onProgress({ step: 'create', msg: `Erstelle ${toSync.length} Termine...`, total: toSync.length, done: 0 });
 
-  const synced = await _batchSync(toSync, calendarId, (done, total) => {
-    onProgress({ step: 'create', msg: `Erstelle Termine... (${done}/${total})`, total, done });
+  const synced = await _sequentialSync(toSync, calendarId, (created, attempted, total) => {
+    onProgress({ step: 'create', msg: `Erstelle Termine... ${created} erstellt (${attempted}/${total})`, total, done: attempted });
   });
 
   // 4. Persist synced IDs
@@ -134,17 +133,17 @@ async function gcalSync({ resync = false, onProgress = () => {} } = {}) {
   return { synced: synced.length };
 }
 
-/** Batched sync with rate-limit retry — mirrors src/gcal-sync.js batchSync. */
-async function _batchSync(events, calendarId, onBatchDone) {
+/**
+ * Sequential sync — one event at a time with a small delay.
+ * Avoids parallel retry storms that cause persistent rate-limit failures.
+ */
+async function _sequentialSync(events, calendarId, onProgress) {
   const synced = [];
-  let done = 0;
-  for (let i = 0; i < events.length; i += BATCH_SIZE) {
-    const batch   = events.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(e => _createEvent(calendarId, e)));
-    synced.push(...results.filter(Boolean));
-    done += batch.length;
-    onBatchDone(done, events.length);
-    if (i + BATCH_SIZE < events.length) await _sleep(BATCH_DELAY_MS);
+  for (let i = 0; i < events.length; i++) {
+    const result = await _createEvent(calendarId, events[i]);
+    if (result) synced.push(result);
+    onProgress(synced.length, i + 1, events.length);
+    if (i + 1 < events.length) await _sleep(EVENT_DELAY_MS);
   }
   return synced;
 }
@@ -191,7 +190,7 @@ async function _createEvent(calendarId, e, maxRetries = 4) {
     }
 
     if (r.status === 429 || r.status === 503) {
-      if (attempt < maxRetries) { await _sleep(1000 * Math.pow(2, attempt)); continue; }
+      if (attempt < maxRetries) { await _sleep(1000 * Math.pow(2, attempt) + Math.random() * 500); continue; }
       console.warn('[gcal] Rate limited, giving up on:', e.shortTitle);
       return null;
     }
@@ -210,8 +209,8 @@ async function gcalDeleteSynced(calendarId, onProgress = () => {}) {
   const stored = getSyncedEvents();
   let deleted  = 0;
 
-  for (let i = 0; i < stored.length; i += BATCH_SIZE) {
-    await Promise.all(stored.slice(i, i + BATCH_SIZE).map(async ({ id }) => {
+  for (let i = 0; i < stored.length; i += 5) {
+    await Promise.all(stored.slice(i, i + 5).map(async ({ id }) => {
       try {
         await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${id}`, { method: 'DELETE' });
         deleted++;
@@ -226,8 +225,8 @@ async function gcalDeleteSynced(calendarId, onProgress = () => {}) {
       `?privateExtendedProperty=mshSync%3D1&singleEvents=true&maxResults=2500`
     );
     const d = await r.json();
-    for (let i = 0; i < (d.items || []).length; i += BATCH_SIZE) {
-      await Promise.all(d.items.slice(i, i + BATCH_SIZE).map(async evt => {
+    for (let i = 0; i < (d.items || []).length; i += 5) {
+      await Promise.all(d.items.slice(i, i + 5).map(async evt => {
         try {
           await gcalFetch(`${GCAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${evt.id}`, { method: 'DELETE' });
           deleted++;

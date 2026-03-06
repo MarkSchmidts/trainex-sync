@@ -235,6 +235,31 @@ tests.push(test('skips events with invalid dtstart/dtend', async () => {
   assert.equal(synced.length, 2, 'should skip the invalid event');
 }));
 
+// ── Sequential sync (progress shows created count, not just attempted) ─────────
+
+console.log('\nsequential sync (progress accuracy)');
+
+tests.push(test('progress created count never exceeds attempted count', async () => {
+  const events   = makeEvents(20);
+  const fetch    = rateLimitedFetch(5); // first 5 fail
+  const progress = [];
+  const synced   = await batchSync(events, 'primary', fetch, {
+    batchSize: 1, batchDelayMs: 0, onProgress: (p) => progress.push({ ...p }),
+  });
+  for (const p of progress) {
+    assert.ok(p.synced <= p.done, `synced (${p.synced}) should never exceed attempted (${p.done})`);
+  }
+  assert.equal(progress[progress.length - 1].done, 20);
+}));
+
+tests.push(test('reports 0 created when all events fail', async () => {
+  const events  = makeEvents(5);
+  const synced  = await batchSync(events, 'primary', alwaysRateLimitFetch(), {
+    batchSize: 1, batchDelayMs: 0,
+  });
+  assert.equal(synced.length, 0);
+}));
+
 // ── Run all async tests ────────────────────────────────────────────────────────
 
 Promise.all(tests).then(() => {
